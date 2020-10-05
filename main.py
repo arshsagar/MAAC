@@ -60,13 +60,15 @@ def run(config):
                                  [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
                                   for acsp in env.action_space])
     t = 0
+    
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
         print("Episodes %i-%i of %i" % (ep_i + 1,
                                         ep_i + 1 + config.n_rollout_threads,
                                         config.n_episodes))
         obs = env.reset()
         model.prep_rollouts(device='cpu')
-
+        agent_collisions = np.array([0, 0, 0, 0])
+        wall_collisions = np.array([0, 0, 0, 0])
         for et_i in range(config.episode_length):
             # rearrange observations to be per agent, and convert to torch Variable
             torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
@@ -78,7 +80,9 @@ def run(config):
             agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
-            next_obs, rewards, dones, infos = env.step(actions)
+            next_obs, rewards, dones, infos, ac, wc = env.step(actions)
+            agent_collisions = agent_collisions + ac[0]
+            wall_collisions = wall_collisions + wc[0]
             replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
             obs = next_obs
             t += config.n_rollout_threads
@@ -98,8 +102,11 @@ def run(config):
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
         for a_i, a_ep_rew in enumerate(ep_rews):
-            logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
-                              a_ep_rew * config.episode_length, ep_i)
+            logger.add_scalar('agent%i/mean_episode_rewards' % a_i, a_ep_rew * config.episode_length, ep_i)
+        for a_i, a_ep_col in enumerate(agent_collisions):
+            logger.add_scalar('agent%i/per_episode_agent_collisions' % a_i, a_ep_col, ep_i)
+        for a_i, a_ep_col in enumerate(wall_collisions):
+            logger.add_scalar('agent%i/per_episode_wall_collisions' % a_i, a_ep_col, ep_i)
 
         if ep_i % config.save_interval < config.n_rollout_threads:
             model.prep_rollouts(device='cpu')
@@ -119,10 +126,12 @@ if __name__ == '__main__':
     parser.add_argument("model_name",
                         help="Name of directory to store " +
                              "model/training contents")
-    parser.add_argument("--n_rollout_threads", default=12, type=int)
-    parser.add_argument("--buffer_length", default=int(1e6), type=int)
+#    parser.add_argument("--n_rollout_threads", default=12, type=int)
+    parser.add_argument("--n_rollout_threads", default=1, type=int)
+#    parser.add_argument("--buffer_length", default=int(1e6), type=int)
+    parser.add_argument("--buffer_length", default=10000, type=int)
     parser.add_argument("--n_episodes", default=50000, type=int)
-    parser.add_argument("--episode_length", default=25, type=int)
+    parser.add_argument("--episode_length", default=50, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
     parser.add_argument("--num_updates", default=4, type=int,
                         help="Number of updates per update cycle")
@@ -138,7 +147,7 @@ if __name__ == '__main__':
     parser.add_argument("--tau", default=0.001, type=float)
     parser.add_argument("--gamma", default=0.99, type=float)
     parser.add_argument("--reward_scale", default=100., type=float)
-    parser.add_argument("--use_gpu", action='store_true')
+    parser.add_argument("--use_gpu", action='store_false')
 
     config = parser.parse_args()
 

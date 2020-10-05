@@ -84,6 +84,8 @@ class MultiAgentEnv(gym.Env):
     def _step(self, action_n):
         obs_n = []
         reward_n = []
+        ac_n = []
+        wc_n = []
         done_n = []
         info_n = {'n': []}
         self.agents = self.world.policy_agents
@@ -95,9 +97,13 @@ class MultiAgentEnv(gym.Env):
         # record observation for each agent
         for agent in self.agents:
             obs_n.append(self._get_obs(agent))
-            reward_n.append(self._get_reward(agent))
+            
+            main_reward, agent_collisions, wall_collisions = self._get_reward(agent)
+            reward_n.append(main_reward)
+            ac_n.append(agent_collisions)
+            wc_n.append(wall_collisions)
+            
             done_n.append(self._get_done(agent))
-
             info_n['n'].append(self._get_info(agent))
 
         # all agents get total reward in cooperative case
@@ -106,7 +112,7 @@ class MultiAgentEnv(gym.Env):
             reward_n = [reward] * self.n
         if self.post_step_callback is not None:
             self.post_step_callback(self.world)
-        return obs_n, reward_n, done_n, info_n
+        return obs_n, reward_n, done_n, info_n, ac_n, wc_n
 
     def _reset(self):
         # reset world
@@ -143,7 +149,8 @@ class MultiAgentEnv(gym.Env):
     def _get_reward(self, agent):
         if self.reward_callback is None:
             return 0.0
-        return self.reward_callback(agent, self.world)
+        main_reward, agent_collisions, wall_collisions = self.reward_callback(agent, self.world)
+        return main_reward, agent_collisions, wall_collisions
 
     # set env action for a particular agent
     def _set_action(self, action, agent, action_space, time=None):

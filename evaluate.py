@@ -44,7 +44,7 @@ def run(config):
             torch_actions = model.step(torch_obs, explore=False)
             # convert actions to numpy arrays
             actions = [ac.data.numpy().flatten() for ac in torch_actions]
-            obs, rewards, dones, infos = env.step(actions)
+            obs, rewards, dones, infos, ac, wc = env.step(actions)
             if config.save_gifs:
                 frames.append(env.render('rgb_array')[0])
             calc_end = time.time()
